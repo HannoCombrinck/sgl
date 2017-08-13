@@ -110,7 +110,12 @@ private:
 };
 
 typedef pair<uStateKey, uDrawCallOffset> drawCall;
-vector<drawCall> aDrawCalls;
+
+vector<drawCall>* aDrawCalls_ut;
+vector<drawCall>* aDrawCalls_rt;
+vector<DrawCallData>* aDrawCallDataBuffer_ut; // Fixed size, write only, buffer to accommodate max number of draw calls 
+vector<DrawCallData>* aDrawCallDataBuffer_rt; // Fixed size, read only, buffer to accommodate max number of draw calls 
+uint uDrawCallCount;
 
 bool drawCallCompare(const drawCall& d1, const drawCall& d2)
 {
@@ -119,18 +124,34 @@ bool drawCallCompare(const drawCall& d1, const drawCall& d2)
 
 void update(double dt)
 {
+	aDrawCalls_ut->clear();
+
+	// Traverse scene graph and populate aDrawCalls_ut (with visible geometry) in update thread
 	for (const auto& g : m_aGameObjects)
 	{
+		// Update game object
+		//	- this update potentially modifies contents of entries in draw call data buffer
+		//	- if this is the then mark the draw call data entry as "modified" and update
+		//	  min and max buffer offset values.
+		//	  This will be used to only copy parts of the buffer that has changed.
+
 		auto aDC = g.getVisual().getDrawCalls();
+		// TODO: iterate aDC and get min and max offsets of "modified" draw call data
+		// 	 later on only the the parts of DrawCallDataBuffer that has changed will be copied
 		aDrawCalls.insert(aDrawCalls.end(), aDC.begin(), aDC.end());
 	}
 	sort(aDrawCalls, drawCallCompare); // Should sort happen in update thread or render thread?
+
+	syncMain();		
 }
 
 // Synchronize update and render threads and copy update frame data results render frame data
 void syncMain()
 {
-	
+	// join update thread
+	swap(aDrawCallDataBuffer_ut, aDrawCallDataBuffer_rt); // rather copy than swap?
+	// copy RenderJob results from render thread to udpate thread buffer
+	// launch update thread for next frame and let this thread continue to render stuff
 }
 
 void updateState(const PipelineState& s)
