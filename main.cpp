@@ -36,6 +36,23 @@ using namespace std;
 
 typedef unsigned int uStateKey;
 
+class AssetLoader
+{
+public:
+		AssetLoader() {}
+		~AssetLoader() {}
+		
+		shared_ptr<Texture> loadTexture(const string& sFilename) { return null_ptr; /*TODO*/ }
+		shared_ptr<Sound> loadSound(const string& sFilename) { return null_ptr; /*TODO*/ }
+		//etc.
+
+private:
+		unordered_map<string, shared_ptr<Texture>> m_mapTextures;
+		unordered_map<string, shared_ptr<Sound>> m_mapSounds;
+		//etc.
+
+};
+
 class Target
 {
 public:
