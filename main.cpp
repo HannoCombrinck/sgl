@@ -14,8 +14,12 @@ using namespace std;
 /* Render something: (View: has a frustum and camera i.e view and projection matrices)
 	Bind render target
 	Bind shaders
+		Upload projection matrix 
+		Upload view matrix
 	Upload uniforms
+		Colours, time values etc.
 	Bind textures
+	Upload world matrix
 	Submit draw call
 
 	sorting key that represents all of the above 
