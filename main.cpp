@@ -91,8 +91,7 @@ private:
 class View
 {
 public:
-	enum ELayer
-	{
+	enum ELayer {
 		LAYER_OPAQUE = 0,
 		LAYER_TRANSPARENT,
 		LAYER_COUNT
@@ -138,13 +137,11 @@ vector<DrawCallData>* aDrawCallDataBuffer_ut; // Fixed size, write only, buffer 
 vector<DrawCallData>* aDrawCallDataBuffer_rt; // Fixed size, read only, buffer to accommodate max number of draw calls 
 uint uDrawCallCount;
 
-bool drawCallCompare(const drawCall& d1, const drawCall& d2)
-{
+bool drawCallCompare(const drawCall& d1, const drawCall& d2) {
 	return d1.first < d2.first;	
 }
 
-void update(double dt)
-{
+void update(double dt) {
 	aDrawCalls_ut->clear();
 
 	// Traverse scene graph and populate aDrawCalls_ut (with visible geometry) in update thread
@@ -167,21 +164,18 @@ void update(double dt)
 }
 
 // Synchronize update and render threads and copy update frame data results render frame data
-void syncMain()
-{
+void syncMain() {
 	// join update thread
 	swap(aDrawCallDataBuffer_ut, aDrawCallDataBuffer_rt); // rather copy than swap?
 	// copy RenderJob results from render thread to udpate thread buffer
 	// launch update thread for next frame and let this thread continue to render stuff
 }
 
-void updateState(const PipelineState& s)
-{
+void updateState(const PipelineState& s) {
 	
 }
 
-void submit(const DrawCallData& d)
-{
+void submit(const DrawCallData& d) {
 	setTarget(d.getState().getTarget());
 	setShaders(d.getState().getMaterial());
 	setShaderData(d.getState().getMaterial());
@@ -189,8 +183,7 @@ void submit(const DrawCallData& d)
 	draw(d.getDrawParams());
 }
 
-void render()
-{
+void render() {
 	// Submit pre-sorted draw calls
 	for (const auto& d : aDrawCalls)
 	{
@@ -198,8 +191,7 @@ void render()
 	}
 }
 
-int doSomeWork(int iCount)
-{
+int doSomeWork(int iCount) {
 	int iTotal = 0;
 	for (int i = 0; i < iCount; ++i)
 	{
@@ -208,8 +200,7 @@ int doSomeWork(int iCount)
 	return iTotal;
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
 	GLWindow window("OpenGL Window", 800, 600, false);
 	window.registerKeyPress(GLFW_KEY_A, []() { cout << doSomeWork(10) << endl; });
 
@@ -222,8 +213,7 @@ int main(int argc, char** argv)
 	View fpsView;
 	fpsView
 
-	while (window.isRunning())
-	{
+	while (window.isRunning()) {
 		// Update thread
 		dPreviousTime = dCurrentTime;
 		dCurrentTime = glfwGetTime();
