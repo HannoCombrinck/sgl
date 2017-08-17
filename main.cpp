@@ -38,7 +38,18 @@ using namespace std;
 
 */
 
-typedef unsigned int uStateKey;
+/* Matrix naming convenction examples:
+
+Direct3D style:
+object_to_projection = object_to_world * world_to_view * view_to_projection;
+object_to_view = object_to_world * world_to_view;
+object_to_projection = object_to_view * view_to_projection; 
+
+OpenGL style:
+projection_from_object = projection_from_view * view_from_world * world_from_object
+*/
+
+typedef unsigned int StateKey;
 
 class AssetLoader
 {
@@ -129,7 +140,7 @@ private:
 	PipelineState m_State;
 };
 
-typedef pair<uStateKey, uDrawCallOffset> drawCall;
+typedef pair<StateKey, uDrawCallOffset> drawCall;
 
 vector<drawCall>* aDrawCalls_ut;
 vector<drawCall>* aDrawCalls_rt;
@@ -145,8 +156,7 @@ void update(double dt) {
 	aDrawCalls_ut->clear();
 
 	// Traverse scene graph and populate aDrawCalls_ut (with visible geometry) in update thread
-	for (const auto& g : m_aGameObjects)
-	{
+	for (const auto& g : m_aGameObjects) {
 		// Update game object
 		//	- this update potentially modifies contents of entries in draw call data buffer
 		//	- if this is the then mark the draw call data entry as "modified" and update
