@@ -1,5 +1,4 @@
 #include "timer.h"
-
 #include <windows.h>
 
 Timer::Timer(const std::string& sName)

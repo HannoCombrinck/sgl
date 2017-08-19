@@ -1,9 +1,34 @@
 #include <iostream>
 #include <future>
-#include "myglfw.h"
-#include "Timer.h"
+#include <unordered_map>
+
+#include <SFML/OpenGL.hpp>
+#include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
+
+#include <glm/glm.hpp>
+
+#include "timer.h"
 
 using namespace std;
+
+typedef unsigned int uint;
+typedef glm::mat4 Mat4;
+
+struct NullPtr
+{
+	template <class T>
+	inline operator shared_ptr<T>() const { return shared_ptr<T>(); }
+
+	template <class T>
+	inline operator weak_ptr<T>() const { return weak_ptr<T>(); }
+
+	template <class T>
+	inline operator T* () const { return 0; }
+};
+
+static NullPtr null_ptr;
+
 
 // GPU jobs
 /*
@@ -49,7 +74,8 @@ OpenGL style:
 projection_from_object = projection_from_view * view_from_world * world_from_object
 */
 
-typedef unsigned int StateKey;
+
+typedef unsigned int StateKey; // Pack bits into this key to use for draw call sorting
 
 class AssetLoader
 {
@@ -57,13 +83,13 @@ public:
 		AssetLoader() {}
 		~AssetLoader() {}
 		
-		shared_ptr<Texture> loadTexture(const string& sFilename) { return null_ptr; /*TODO*/ }
-		shared_ptr<Sound> loadSound(const string& sFilename) { return null_ptr; /*TODO*/ }
+		//shared_ptr<Texture> loadTexture(const string& sFilename) { return null_ptr; }
+		//shared_ptr<Sound> loadSound(const string& sFilename) { return null_ptr; }
 		//etc.
 
 private:
-		unordered_map<string, shared_ptr<Texture>> m_mapTextures;
-		unordered_map<string, shared_ptr<Sound>> m_mapSounds;
+		//unordered_map<string, shared_ptr<Texture>> m_mapTextures;
+		//unordered_map<string, shared_ptr<Sound>> m_mapSounds;
 		//etc.
 
 };
@@ -140,7 +166,7 @@ private:
 	PipelineState m_State;
 };
 
-typedef pair<StateKey, uDrawCallOffset> drawCall;
+typedef pair<StateKey, uint> drawCall;
 
 vector<drawCall>* aDrawCalls_ut;
 vector<drawCall>* aDrawCalls_rt;
@@ -152,6 +178,7 @@ bool drawCallCompare(const drawCall& d1, const drawCall& d2) {
 	return d1.first < d2.first;	
 }
 
+/*
 void update(double dt) {
 	aDrawCalls_ut->clear();
 
@@ -200,42 +227,61 @@ void render() {
 		submit(d.second.pDrawCall);
 	}
 }
-
-int doSomeWork(int iCount) {
-	int iTotal = 0;
-	for (int i = 0; i < iCount; ++i)
-	{
-		iTotal += i % 10;
-	}
-	return iTotal;
-}
+*/
+///////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char** argv) {
-	GLWindow window("OpenGL Window", 800, 600, false);
-	window.registerKeyPress(GLFW_KEY_A, []() { cout << doSomeWork(10) << endl; });
+	sf::ContextSettings settingsRequested;
+	settingsRequested.depthBits = 24;
+	settingsRequested.stencilBits = 8;
+	settingsRequested.antialiasingLevel = 4;
+	sf::Window window(sf::VideoMode(800, 600), "OpenGL Window", sf::Style::Default, settingsRequested);
+	window.setVerticalSyncEnabled(true);
+	window.setActive(true); // This call set the OpenGL context as well - only thread with active window can call OpenGL calls
+	
+	auto settingsUsed = window.getSettings();
+	cout << "OpenGL Version: " << settingsUsed.majorVersion << "." << settingsUsed.minorVersion << endl;
 
 
-	auto dCurrentTime = glfwGetTime();
+	auto dCurrentTime = 0.0; // get time from sfml
 	double dPreviousTime = 0.0;
 	double dt = 0.0;
 	
 	Camera mainCam;
 	View fpsView;
-	fpsView
 
-	while (window.isRunning()) {
+	bool bRunning = true;
+	while (bRunning) 
+	{
+		sf::Event event;
+		while (window.pollEvent(event))
+		{
+			if (event.type == sf::Event::Closed)
+			{
+				bRunning = false;
+			}
+			else if (event.type == sf::Event::Resized)
+			{
+				glViewport(0, 0, event.size.width, event.size.height);
+			}
+			// TODO: Handle other events
+		}
+
 		// Update thread
 		dPreviousTime = dCurrentTime;
-		dCurrentTime = glfwGetTime();
+		dCurrentTime = 0.0; // get time from SFML
 		dt = dCurrentTime - dPreviousTime;
-		window.processEvents();
-		update(dt);
+		//window.processEvents();
+		//update(dt);
 
 		// Render thread
-		render();
-		window.swapBuffers();
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		//render();
+		window.display();
 	}
 
-	return 0; 
+	// Cleanup GL resources
+
+	return 0;
 }
 
