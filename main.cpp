@@ -35,6 +35,16 @@ static NullPtr null_ptr;
 	Create VBO, IBO, VAO, shader, texture, framebufferobject etc..
 */
 
+// Render thread sequence
+/*
+	Bind back buffer
+	Clear back buffer
+	for all objects
+		upload necessary shader values
+		bind textures
+		submit gl draw command
+*/
+
 // Buffer containing draw call information 
 /* Render something: (View: has a frustum and camera i.e view and projection matrices)
 	Bind render target
@@ -50,7 +60,7 @@ static NullPtr null_ptr;
 	sorting key that represents all of the above 
 */
 
-// View
+// View (Contains high level data that will be used to populate lower level drawcall/command buffers
 /* Information necessary to populate some target buffer (on or off screen)
 	Render target (Back buffer or render texture)
 	Resolution (defined by render target?)	
@@ -91,7 +101,6 @@ private:
 		//unordered_map<string, shared_ptr<Texture>> m_mapTextures;
 		//unordered_map<string, shared_ptr<Sound>> m_mapSounds;
 		//etc.
-
 };
 
 class Target
@@ -101,7 +110,6 @@ public:
 	~Target() {}
 
 private:
-
 };
 
 class Camera
@@ -110,17 +118,17 @@ public:
 	Camera() {}
 	~Camera() {}
 
-	void setView(const Mat4& m) { m_mView = m; }
-	Mat4& modifyView() { return m_mView; }
-	const Mat4& getView() const { return m_mView; }
+	void setViewFromWorld(const Mat4& m) { m_mViewFromWorld = m; }
+	Mat4& modifyViewFromWorld() { return m_mViewFromWorld; }
+	const Mat4& getViewFromWorlds() const { return m_mViewFromWorld; }
 
-	void setProj(const Mat4& m) { m_mProj = m; }
-	Mat4& modifyProj() { return m_mProj; }
-	const Mat4& getProj() const { return m_mProj; }
+	void setProjFromView(const Mat4& m) { m_mProjFromView = m; }
+	Mat4& modifyProjFromView() { return m_mProjFromView; }
+	const Mat4& getProjFromView() const { return m_mProjFromView; }
 
 private:
-	Mat4 m_mView;
-	Mat4 m_mProj;
+	Mat4 m_mViewFromWorld;
+	Mat4 m_mProjFromView;
 // position vec
 // orientation quat	
 };
@@ -134,8 +142,21 @@ public:
 		LAYER_COUNT
 	};
 
-	View() {}
-	~View() {}
+	View(const shared_ptr<Camera>& spCamera)
+		: m_spCamera(spCamera)
+	{
+	}
+
+	~View() {
+	}
+
+	void setCamera(const shared_ptr<Camera>& spCamera) {
+		m_spCamera = spCamera;
+	}
+
+	shared_ptr<Camera> getCamera() const {
+		return m_spCamera;
+	}
 
 private:
 	uint m_uTarget;
@@ -155,7 +176,6 @@ public:
 private:
 	uint m_uTarget;
 	uint m_uMaterial; 
-
 };
 
 class DrawCallData
@@ -163,6 +183,7 @@ class DrawCallData
 public:
 
 private:
+	uint m_uVAO; // Encapsulates vertex buffer and index buffer
 	PipelineState m_State;
 };
 
@@ -230,54 +251,96 @@ void render() {
 */
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-int main(int argc, char** argv) {
-	sf::ContextSettings settingsRequested;
-	settingsRequested.depthBits = 24;
-	settingsRequested.stencilBits = 8;
-	settingsRequested.antialiasingLevel = 4;
-	sf::Window window(sf::VideoMode(800, 600), "OpenGL Window", sf::Style::Default, settingsRequested);
-	window.setVerticalSyncEnabled(true);
-	window.setActive(true); // This call set the OpenGL context as well - only thread with active window can call OpenGL calls
-	
-	auto settingsUsed = window.getSettings();
-	cout << "OpenGL Version: " << settingsUsed.majorVersion << "." << settingsUsed.minorVersion << endl;
-
-
-	auto dCurrentTime = 0.0; // get time from sfml
-	double dPreviousTime = 0.0;
-	double dt = 0.0;
-	
-	Camera mainCam;
-	View fpsView;
-
-	bool bRunning = true;
-	while (bRunning) 
+// Create a window with an OpenGL context that handles system events (including user input)
+class GLWindow
+{
+public:
+	GLWindow(const string& sName, uint uWidth, uint uHeight)
+		: m_bRunning(true)
 	{
-		sf::Event event;
-		while (window.pollEvent(event))
-		{
-			if (event.type == sf::Event::Closed)
+		sf::ContextSettings settingsRequested;
+		settingsRequested.depthBits = 24;
+		settingsRequested.stencilBits = 8;
+		settingsRequested.antialiasingLevel = 4;
+		m_pWindow = unique_ptr<sf::Window>(new sf::Window(sf::VideoMode(uWidth, uHeight), sName.c_str(), sf::Style::Default, settingsRequested));
+		m_pWindow->setVerticalSyncEnabled(true);
+		m_pWindow->setActive(true); // This call set the OpenGL context as well - only thread with active window can call OpenGL calls
+		
+		auto settingsUsed = m_pWindow->getSettings();
+		cout << "Created window with OpenGL context version: " << settingsUsed.majorVersion << "." << settingsUsed.minorVersion << endl;
+	}
+
+	~GLWindow() {
+		// Do SFML cleanup before m_pWindow is destroyed 
+	}
+
+	bool isRunning() const { 
+		return m_bRunning; 
+	}
+
+	double getDeltaTime() {
+		m_Time = m_Clock.getElapsedTime();
+		m_Clock.restart();
+		return double(m_Time.asSeconds());
+	}
+
+	void processEvents() {
+		while (m_pWindow->pollEvent(m_Event)) {
+			if (m_Event.type == sf::Event::Closed)
 			{
-				bRunning = false;
+				m_bRunning = false;
 			}
-			else if (event.type == sf::Event::Resized)
+			else if (m_Event.type == sf::Event::Resized)
 			{
-				glViewport(0, 0, event.size.width, event.size.height);
+				m_uWidth = m_Event.size.width;
+				m_uHeight = m_Event.size.height;
+				glViewport(0, 0, m_uWidth, m_uHeight); // Move to View
+			}
+			else if (m_Event.type == sf::Event::KeyPressed)
+			{
+				switch (m_Event.key.code)
+				{
+				case sf::Keyboard::T:
+					cout << "Last delta time: " << m_Time.asMilliseconds() << " ms\n";
+					break;
+				}
 			}
 			// TODO: Handle other events
 		}
+	}
 
+	void swapBuffers() {
+		m_pWindow->display(); // if SFML is set to enable v-sync this display() call blocks until next v-sync happens 
+	}
+
+private:
+	unique_ptr<sf::Window> m_pWindow;
+	sf::Event m_Event;
+	sf::Time m_Time;
+	sf::Clock m_Clock;
+	uint m_uWidth;
+	uint m_uHeight;
+	bool m_bRunning;
+};
+
+int main(int argc, char** argv) {
+	GLWindow window("OpenGL Window", 800, 600);
+
+	double dt = 0.0;
+	
+	auto spFpsCam = make_shared<Camera>();
+	View fpsView(spFpsCam);
+
+	while (window.isRunning()) {
 		// Update thread
-		dPreviousTime = dCurrentTime;
-		dCurrentTime = 0.0; // get time from SFML
-		dt = dCurrentTime - dPreviousTime;
-		//window.processEvents();
+		window.processEvents();
+		dt = window.getDeltaTime();
 		//update(dt);
 
 		// Render thread
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		//render();
-		window.display();
+		window.swapBuffers();
 	}
 
 	// Cleanup GL resources
