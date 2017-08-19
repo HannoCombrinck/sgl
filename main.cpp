@@ -2,10 +2,10 @@
 #include <future>
 #include <unordered_map>
 
+#include <gl/glew.h>
 #include <SFML/OpenGL.hpp>
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
-
 #include <glm/glm.hpp>
 
 #include "timer.h"
@@ -14,6 +14,8 @@ using namespace std;
 
 typedef unsigned int uint;
 typedef glm::mat4 Mat4;
+typedef glm::vec3 Vec3;
+typedef glm::vec2 Vec2;
 
 struct NullPtr
 {
@@ -187,6 +189,25 @@ private:
 	PipelineState m_State;
 };
 
+enum ECommandType
+{
+	COMMAND_SET_TARGET,
+	COMMAND_SET_VIEWPORT,
+	COMMAND_CLEAR,
+	COMMAND_DRAW,
+};
+
+class DeviceCommand
+{
+public:
+	DeviceCommand() {}
+	~DeviceCommand() {}
+
+private:
+	ECommandType m_eType;
+
+};
+
 typedef pair<StateKey, uint> drawCall;
 
 vector<drawCall>* aDrawCalls_ut;
@@ -265,7 +286,15 @@ public:
 		m_pWindow = unique_ptr<sf::Window>(new sf::Window(sf::VideoMode(uWidth, uHeight), sName.c_str(), sf::Style::Default, settingsRequested));
 		m_pWindow->setVerticalSyncEnabled(true);
 		m_pWindow->setActive(true); // This call set the OpenGL context as well - only thread with active window can call OpenGL calls
-		
+	
+		glewExperimental = true;
+		auto eError = glewInit();
+		if (eError != GLEW_OK)
+		{
+			cout << "Failed to initialize glew\n";
+			assert(false);
+		}
+
 		auto settingsUsed = m_pWindow->getSettings();
 		cout << "Created window with OpenGL context version: " << settingsUsed.majorVersion << "." << settingsUsed.minorVersion << endl;
 	}
@@ -323,27 +352,91 @@ private:
 	bool m_bRunning;
 };
 
+struct SVertex
+{
+	Vec3 vPos;
+	Vec2 vUV;
+};
+
+uint uVAO = ~0;
+uint uVBO = ~0;
+uint uIB = ~0;
+
+void loadAssets()
+{
+	vector<SVertex> aVertices = {
+		{ Vec3(0.0f, 0.0f, 0.0f), Vec2(0.0, 0.0) }, // Vertex 0
+		{ Vec3(0.5f, 0.0f, 0.0f), Vec2(1.0, 0.0) }, // Vertex 1
+		{ Vec3(0.5f, 0.5f, 0.0f), Vec2(1.0, 1.0) }, // Vertex 2
+		{ Vec3(0.0f, 0.5f, 0.0f), Vec2(0.0, 1.0) }  // Vertex 3
+	};
+
+	vector<uint> aIndices = {
+		0, 1, 2, // Triangle 0
+		0, 2, 3  // Triangle 1
+	};
+
+	// Create vertex array object
+	glGenVertexArrays(1, &uVAO);
+	glBindVertexArray(uVAO);
+
+	// Create vertex buffer object
+	glGenBuffers(1, &uVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, uVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(SVertex) * aVertices.size(), reinterpret_cast<void*>(&aVertices[0]), GL_STATIC_DRAW);
+
+	// Set vertex attribute layouts
+	glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(SVertex), (GLvoid*) 0); // Position attribute
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, true, sizeof(SVertex), (GLvoid*) 3); // Texture coordinate attribute
+	glEnableVertexAttribArray(1);
+
+	// Create index buffer object
+	glGenBuffers(1, &uIB);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, uIB);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(uint) * aIndices.size(), reinterpret_cast<void*>(&aIndices[0]), GL_STATIC_DRAW);
+
+	glBindVertexArray(0);
+	
+
+	// TODO: Create texture
+}
+
+void cleanupAssets()
+{
+	glDeleteBuffers(1, &uVBO);
+	glDeleteBuffers(1, &uIB);
+	glDeleteBuffers(1, &uVAO);
+}
+
 int main(int argc, char** argv) {
 	GLWindow window("OpenGL Window", 800, 600);
 
-	double dt = 0.0;
-	
+	loadAssets();
+
 	auto spFpsCam = make_shared<Camera>();
 	View fpsView(spFpsCam);
 
 	while (window.isRunning()) {
 		// Update thread
 		window.processEvents();
-		dt = window.getDeltaTime();
+		auto dt = window.getDeltaTime();
 		//update(dt);
+		glMatrixMode(GL_MODELVIEW);
+		glRotatef(1.0f, 0.0f, 0.0f, 1.0f);
+
 
 		// Render thread
+		// render();
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		//render();
+		glBindVertexArray(uVAO);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (const GLvoid*) 0);
+		glBindVertexArray(0);
+		
 		window.swapBuffers();
 	}
 
-	// Cleanup GL resources
+	cleanupAssets();
 
 	return 0;
 }
