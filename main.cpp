@@ -13,6 +13,7 @@
 using namespace std;
 
 typedef unsigned int uint;
+typedef unsigned char uchar;
 typedef glm::mat4 Mat4;
 typedef glm::vec3 Vec3;
 typedef glm::vec2 Vec2;
@@ -169,7 +170,7 @@ private:
 };
 
 
-class PipelineState
+/*class PipelineState
 {
 public:
 	PipelineState() {}
@@ -178,34 +179,95 @@ public:
 private:
 	uint m_uTarget;
 	uint m_uMaterial; 
-};
+};*/
 
-class DrawCallData
+/*class DrawCallData
 {
 public:
 
 private:
 	uint m_uVAO; // Encapsulates vertex buffer and index buffer
 	PipelineState m_State;
-};
+};*/
 
 enum ECommandType
 {
-	COMMAND_SET_TARGET,
-	COMMAND_SET_VIEWPORT,
-	COMMAND_CLEAR,
-	COMMAND_DRAW,
+	COMMAND_INVALID			  = 0,
+	COMMAND_SET_RENDER_TARGET = 1 << 0,
+	COMMAND_SET_VIEWPORT	  = 1 << 1,
+	COMMAND_CLEAR			  = 1 << 2,
+	COMMAND_DRAW_CALL		  = 1 << 3,
 };
 
-class DeviceCommand
+struct RenderTargetData
 {
-public:
-	DeviceCommand() {}
-	~DeviceCommand() {}
+	uint uNumTargets;
+	uint aTargets[8];
+};
 
-private:
+struct ViewportData
+{
+	uint uWidth;
+	uint uHeight;
+	float fNear;
+	float fFar;
+};
+
+struct ClearData
+{
+	uint uFlags;
+};
+
+struct DrawCallData
+{
+	// Temp example data:
+	uint uHandle1;
+	uint uHandle2;
+	Mat4 mWorldFromModel;
+};
+
+struct Command
+{
+	Command() {}
+
+	void tempExecute()
+	{
+		switch (m_eType)
+		{
+		case COMMAND_SET_RENDER_TARGET: 
+		{
+			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(aData);
+			// TODO: Use pRenderTargetData
+			break;
+		}
+		case COMMAND_SET_VIEWPORT:
+		{
+			auto pViewportData = reinterpret_cast<ViewportData*>(aData);
+			// TODO: Use pViewportData
+			break;
+		}
+		case COMMAND_CLEAR:
+		{
+			auto pClearData = reinterpret_cast<ClearData*>(aData);
+			// TODO: Use pClearData
+			break;
+		}
+		case COMMAND_DRAW_CALL:
+		{
+			auto pDrawCallData = reinterpret_cast<DrawCallData*>(aData);
+			// Use pDrawCallData contents to submit draw call to driver
+			break;
+		}
+		default:
+			cout << "Invalid command type\n";
+			assert(false);
+			break;
+		}
+		
+	}
+
 	ECommandType m_eType;
-
+	uchar aData[500]; // Number of bytes required to represent draw command state - calculate based on DrawCallData size
 };
 
 typedef pair<StateKey, uint> drawCall;
