@@ -526,6 +526,11 @@ void runUpdate()
 {
 	uUpdateModifier++;
 
+	///////
+	// This thread will read inputs, run physics, update transforms etc.
+	// Fill command buffer with commands to be executed by GPU
+	///////
+
 	// Populate "update" buffer 
 	Timer t("PopulateTime");
 	t.start();
@@ -651,7 +656,7 @@ void runWork()
 	//cout << "Work result:\t\t" << uWorkResult << endl << endl << endl;
 }
 
-void signalUpdateThread()
+void startUpdateThread()
 {
 	unique_lock<mutex> bufferLock(bufferMutex);
 	bReadyToUpdate = true;
@@ -723,20 +728,21 @@ void testCommands()
 	tTotal.start();
 
 	uUpdateModifier = 0;
-	thread updateThread(runUpdateMT);
-	signalUpdateThread();
+	thread updateThread(runUpdateMT); // Create update thread
+	startUpdateThread(); // Do the first update
 	for (int testCount = 0; testCount < iIterations -1; ++testCount)
 	{
 		syncUpdateThread();
-		swapCommandBuffers();
-		signalUpdateThread();
-		runWork();
+		swapCommandBuffers(); // Neither update or render code should be running here
+		startUpdateThread(); // Start update for next frame
+		runWork(); // Submit work of current frame
 	}
-	syncUpdateThread();
-	terminateUpdateThread();
+	syncUpdateThread(); // Finish last update
+	terminateUpdateThread(); // Terminate update thread
 	updateThread.join();
 	swapCommandBuffers();
-	runWork();
+	runWork(); // Submit work for last frame
+
 
 	tTotal.stop();
 	cout << "Result: " << uResultTotal << endl;
