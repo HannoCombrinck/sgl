@@ -4,7 +4,6 @@
 #include <condition_variable>
 #include <unordered_map>
 
-
 #include <gl/glew.h>
 #include <SFML/OpenGL.hpp>
 #include <SFML/Graphics.hpp>
@@ -172,7 +171,6 @@ private:
 	shared_ptr<Camera> m_spCamera;
 };
 
-
 /*class PipelineState
 {
 public:
@@ -182,15 +180,6 @@ PipelineState() {}
 private:
 uint m_uTarget;
 uint m_uMaterial;
-};*/
-
-/*class DrawCallData
-{
-public:
-
-private:
-uint m_uVAO; // Encapsulates vertex buffer and index buffer
-PipelineState m_State;
 };*/
 
 enum ECommandType
@@ -231,55 +220,13 @@ struct DrawCallData
 
 struct Command
 {
-	Command() {}
-
-	void tempExecute()
-	{
-		switch (eType)
-		{
-		case COMMAND_SET_RENDER_TARGET:
-		{
-			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(aData);
-			// TODO: Use pRenderTargetData
-			break;
-		}
-		case COMMAND_SET_VIEWPORT:
-		{
-			auto pViewportData = reinterpret_cast<ViewportData*>(aData);
-			// TODO: Use pViewportData
-			break;
-		}
-		case COMMAND_CLEAR:
-		{
-			auto pClearData = reinterpret_cast<ClearData*>(aData);
-			// TODO: Use pClearData
-			break;
-		}
-		case COMMAND_DRAW_CALL:
-		{
-			auto pDrawCallData = reinterpret_cast<DrawCallData*>(aData);
-			// Use pDrawCallData contents to submit draw call to driver
-			break;
-		}
-		default:
-			cout << "Invalid command type\n";
-			assert(false);
-			break;
-		}
-
-	}
+	Command() : eType(COMMAND_INVALID) {}
 
 	ECommandType eType;
 	uchar aData[256]; // Number of bytes required to represent draw command state - calculate based on DrawCallData size
 };
 
 typedef pair<StateKey, uint> drawCall;
-
-vector<drawCall>* aDrawCalls_ut;
-vector<drawCall>* aDrawCalls_rt;
-vector<DrawCallData>* aDrawCallDataBuffer_ut; // Fixed size, write only, buffer to accommodate max number of draw calls 
-vector<DrawCallData>* aDrawCallDataBuffer_rt; // Fixed size, read only, buffer to accommodate max number of draw calls 
-uint uDrawCallCount;
 
 bool drawCallCompare(const drawCall& d1, const drawCall& d2) {
 	return d1.first < d2.first;
@@ -538,7 +485,7 @@ void runUpdate()
 	int iRand = 0;
 	for (int i = 0; i < COUNT; ++i)
 	{
-		iRand = i % 3;// myRand(3);
+		iRand = i % 3;
 
 		switch (iRand)
 		{
@@ -561,6 +508,7 @@ void runUpdate()
 		}
 		default:
 			cout << "this shouldn't happen\n";
+			assert(false);
 			break;
 		}
 
