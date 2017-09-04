@@ -428,39 +428,40 @@ int myRand(int i)
 	return int(round(rand() / float(RAND_MAX) * (i - 1)));
 }
 
-void makeClear(Command* c, uint uFlags)
+void makeClear(Command& c, uint uFlags)
 {
-	c->eType = COMMAND_CLEAR;
-	auto p = reinterpret_cast<ClearData*>(c->aData);
+	c.eType = COMMAND_CLEAR;
+	auto p = reinterpret_cast<ClearData*>(c.aData);
 	p->uFlags = uFlags;
 }
 
-void makeSetRenderTarget(Command* c, uint uNumTargets, const uint aTargets[])
+void makeSetRenderTarget(Command& c, uint uNumTargets, const uint aTargets[])
 {
-	c->eType = COMMAND_SET_RENDER_TARGET;
-	auto p = reinterpret_cast<RenderTargetData*>(c->aData);
+	c.eType = COMMAND_SET_RENDER_TARGET;
+	auto p = reinterpret_cast<RenderTargetData*>(c.aData);
 	p->uNumTargets = uNumTargets;
 	memcpy(p->aTargets, aTargets, uNumTargets * sizeof(uint));
 }
 
-void makeSetViewport(Command* c, uint uWidth, uint uHeight, float fNear, float fFar)
+void makeSetViewport(Command& c, uint uWidth, uint uHeight, float fNear, float fFar)
 {
-	c->eType = COMMAND_SET_VIEWPORT;
-	auto p = reinterpret_cast<ViewportData*>(c->aData);
+	c.eType = COMMAND_SET_VIEWPORT;
+	auto p = reinterpret_cast<ViewportData*>(c.aData);
 	p->uWidth = uWidth;
 	p->uHeight = uHeight;
 	p->fNear = fNear;
 	p->fFar = fFar;
 }
 
-void makeDrawCall(Command* c, uint u1, uint u2, const Mat4& m)
+void makeDrawCall(Command& c, uint u1, uint u2, const Mat4& m)
 {
-	c->eType = COMMAND_DRAW_CALL;
-	auto p = reinterpret_cast<DrawCallData*>(c->aData);
+	c.eType = COMMAND_DRAW_CALL;
+	auto p = reinterpret_cast<DrawCallData*>(c.aData);
 	p->uHandle1 = u1;
 	p->uHandle2 = u2;
 	p->mWorldFromModel = m;
 }
+
 /*
 struct CommandBuffer
 {
@@ -474,7 +475,7 @@ struct CommandBuffer
 };
 */
 
-static const int COUNT = 100000;
+static const int COUNT = 50000;
 Command* aUpdateBuffer; // Should be protected under thread_id
 Command* aRenderBuffer; // Should be protected under thread_id
 int iCommandCount = 0;
@@ -512,25 +513,25 @@ void runUpdate()
 		{
 		case 0:
 		{
-			makeClear(pCurrentUpdate, 5U + uUpdateModifier);
+			makeClear(*pCurrentUpdate, 5U + uUpdateModifier);
 			break;
 		}
 		case 1:
 		{
-			makeSetViewport(pCurrentUpdate, 800U, 600U, 0.1f, 1000.0f);
+			makeSetViewport(*pCurrentUpdate, 800U, 600U, 0.1f, 1000.0f);
 			break;
 		}
 		case 2:
 		{
 			uint aTargets[] = { 3U, 7U, 7U };
-			makeSetRenderTarget(pCurrentUpdate, 3U, aTargets);
+			makeSetRenderTarget(*pCurrentUpdate, 3U, aTargets);
 			break;
 		}
 		case 3:
 		{
 			Mat4 mWorld;
 			mWorld[0][2] = 7.0f;
-			makeDrawCall(pCurrentUpdate, 3U + uUpdateModifier, 6U + uUpdateModifier, mWorld);
+			makeDrawCall(*pCurrentUpdate, 3U + uUpdateModifier, 6U + uUpdateModifier, mWorld);
 			break;
 		}
 		default:
@@ -713,7 +714,7 @@ void testCommands()
 	ta.stop();
 	cout << "Malloc time:\t" << ta.getTime() << "ms\n\n";
 
-	int iIterations = 500;
+	int iIterations = 1;
 
 
 	Timer tTotal("TotalTime");
@@ -752,12 +753,12 @@ void testCommands()
 
 
 	uResultTotal = 0;
-	tTotal.start();
-
+	
 	uUpdateModifier = 0;
 	thread updateThread(runUpdateMT); // Create update thread
 	updateThreadID = updateThread.get_id();
 
+	tTotal.start(); // Skip the time it takes to spin up the thread (it's only going to happen once)
 	startUpdateThread(); // Do the first update
 	for (int testCount = 0; testCount < iIterations -1; ++testCount)
 	{
@@ -768,12 +769,12 @@ void testCommands()
 	}
 	syncUpdateThread(); // Finish last update
 	terminateUpdateThread(); // Terminate update thread
+	tTotal.stop();
 	updateThread.join();
 	swapCommandBuffers();
 	runWork(); // Submit work for last frame
+	
 
-
-	tTotal.stop();
 	cout << "Result: " << uResultTotal << endl;
 	cout << "Total time for everything (separate threads - reusing one thread): " << tTotal.getTime() << "ms\n\n";
 	
