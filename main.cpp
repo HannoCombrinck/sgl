@@ -461,11 +461,22 @@ void makeDrawCall(Command* c, uint u1, uint u2, const Mat4& m)
 	p->uHandle2 = u2;
 	p->mWorldFromModel = m;
 }
+/*
+struct CommandBuffer
+{
+	CommandBuffer() {}
+	~CommandBuffer() {}
+
+	Command* aData;
+	Command* pCmd;    // Pointer to the next available command
+	uint uCount;
+	thread::id owner; // Only the owner thread is allowed to modify this buffer during the update/render phase
+};
+*/
 
 static const int COUNT = 100000;
-Command* aUpdateBuffer;
-Command* aRenderBuffer;
-Command* aTempBuffer;
+Command* aUpdateBuffer; // Should be protected under thread_id
+Command* aRenderBuffer; // Should be protected under thread_id
 int iCommandCount = 0;
 uint uResultTotal = 0;
 uint uUpdateModifier = 0;
@@ -568,7 +579,45 @@ void submitCommands()
 	Timer t("SubmitCommands");
 	t.start();
 
+	auto pCmd = aRenderBuffer;
+	for (int i = 0; i < iCommandCount; ++i)
+	{
+		switch (pCmd->eType)
+		{
+		case COMMAND_SET_RENDER_TARGET:
+		{
+			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(pCmd->aData);
+			
+			/*glBindFramebuffer(GL_FRAMEBUFFER, m_uID);
+			m_uCurrentlyBound = m_uID;
+			if (m_iNumTargets > 0)
+				glDrawBuffers(m_iNumTargets, aColourAttachmentBuffers);*/
 
+			break;
+		}
+		case COMMAND_SET_VIEWPORT:
+		{
+			auto pViewportData = reinterpret_cast<ViewportData*>(pCmd->aData);
+			break;
+		}
+		case COMMAND_CLEAR:
+		{
+			auto pClearData = reinterpret_cast<ClearData*>(pCmd->aData);
+			break;
+		}
+		case COMMAND_DRAW_CALL:
+		{
+			auto pDrawCallData = reinterpret_cast<DrawCallData*>(pCmd->aData);
+			break;
+		}
+		default:
+			cout << "Invalid command type\n";
+			assert(false);
+			break;
+		}
+
+		pCmd++;
+	}
 
 	t.stop();
 	//cout << "Submit commands time:\t\t" << t.getTime() << "ms\n";
