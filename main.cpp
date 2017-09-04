@@ -435,6 +435,14 @@ void makeClear(Command* c, uint uFlags)
 	p->uFlags = uFlags;
 }
 
+void makeSetRenderTarget(Command* c, uint uNumTargets, const uint aTargets[])
+{
+	c->eType = COMMAND_SET_RENDER_TARGET;
+	auto p = reinterpret_cast<RenderTargetData*>(c->aData);
+	p->uNumTargets = uNumTargets;
+	memcpy(p->aTargets, aTargets, uNumTargets * sizeof(uint));
+}
+
 void makeSetViewport(Command* c, uint uWidth, uint uHeight, float fNear, float fFar)
 {
 	c->eType = COMMAND_SET_VIEWPORT;
@@ -462,6 +470,8 @@ int iCommandCount = 0;
 uint uResultTotal = 0;
 uint uUpdateModifier = 0;
 
+thread::id updateThreadID;
+
 mutex bufferMutex;
 condition_variable updateCV;
 bool bReadyToUpdate = false; // Additional variable to check for "spurious wakeup" from update thread's side
@@ -485,7 +495,7 @@ void runUpdate()
 	int iRand = 0;
 	for (int i = 0; i < COUNT; ++i)
 	{
-		iRand = i % 3;
+		iRand = i % 4;
 
 		switch (iRand)
 		{
@@ -500,6 +510,12 @@ void runUpdate()
 			break;
 		}
 		case 2:
+		{
+			uint aTargets[] = { 3U, 7U, 7U };
+			makeSetRenderTarget(pCurrentUpdate, 3U, aTargets);
+			break;
+		}
+		case 3:
 		{
 			Mat4 mWorld;
 			mWorld[0][2] = 7.0f;
@@ -526,7 +542,7 @@ void runUpdateMT()
 	{
 		// Wait on update condition variable before going further
 		unique_lock<mutex> bufferLock(bufferMutex);
-		updateCV.wait(bufferLock, []() {return bReadyToUpdate; });
+		updateCV.wait(bufferLock, []{ return bReadyToUpdate; });
 
 		if (!bIsRunning)
 			return;
@@ -547,6 +563,17 @@ void swapCommandBuffers()
 	swap(aUpdateBuffer, aRenderBuffer);
 }
 
+void submitCommands()
+{
+	Timer t("SubmitCommands");
+	t.start();
+
+
+
+	t.stop();
+	//cout << "Submit commands time:\t\t" << t.getTime() << "ms\n";
+}
+
 void runWork()
 {
 	Timer t("WorkTime");
@@ -561,7 +588,10 @@ void runWork()
 		case COMMAND_SET_RENDER_TARGET:
 		{
 			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(pCurrentRender->aData);
-			// TODO
+			uWorkResult += pRenderTargetData->uNumTargets;
+			for (auto uTarget = 0U; uTarget < pRenderTargetData->uNumTargets; ++uTarget)
+				uWorkResult += pRenderTargetData->aTargets[uTarget];
+			 
 			break;
 		}
 		case COMMAND_SET_VIEWPORT:
@@ -614,7 +644,7 @@ void startUpdateThread()
 void syncUpdateThread()
 {
 	unique_lock<mutex> bufferLock(bufferMutex);
-	updateCV.wait(bufferLock, []() { return bReadyToRender; });
+	updateCV.wait(bufferLock, []{ return bReadyToRender; });
 }
 
 void terminateUpdateThread()
@@ -677,6 +707,8 @@ void testCommands()
 
 	uUpdateModifier = 0;
 	thread updateThread(runUpdateMT); // Create update thread
+	updateThreadID = updateThread.get_id();
+
 	startUpdateThread(); // Do the first update
 	for (int testCount = 0; testCount < iIterations -1; ++testCount)
 	{
