@@ -92,7 +92,7 @@ projection_from_object = projection_from_view * view_from_world * world_from_obj
 */
 
 
-typedef unsigned int StateKey; // Pack bits into this key to use for draw call sorting
+//typedef unsigned int StateKey; // Pack bits into this key to use for draw call sorting
 
 class AssetLoader
 {
@@ -223,18 +223,19 @@ struct DrawCallData
 	Mat4 mWorldFromModel;
 };
 
-struct Command
+struct CommandData
 {
-	Command() : eType(COMMAND_INVALID) {}
+	CommandData() : eType(COMMAND_INVALID) {}
 
 	ECommandType eType;
 	uchar aData[256]; // Number of bytes required to represent draw command state - calculate based on DrawCallData size
 };
 
-typedef pair<StateKey, uint> drawCall;
+typedef uint64_t OrderKey;
+typedef pair<OrderKey, uint> CommandProxy; // <Key for sorting command execution order, Offset into command buffer>
 
-bool drawCallCompare(const drawCall& d1, const drawCall& d2) {
-	return d1.first < d2.first;
+bool commandCompare(const CommandProxy& c1, const CommandProxy& c2) {
+	return c1.first < c2.first;
 }
 
 /*
@@ -433,14 +434,14 @@ int myRand(int i)
 	return int(round(rand() / float(RAND_MAX) * (i - 1)));
 }
 
-void makeClear(Command& c, uint uFlags)
+void makeClear(CommandData& c, uint uFlags)
 {
 	c.eType = COMMAND_CLEAR;
 	auto p = reinterpret_cast<ClearData*>(c.aData);
 	p->uFlags = uFlags;
 }
 
-void makeSetRenderTarget(Command& c, uint uNumTargets, const uint aTargets[])
+void makeSetRenderTarget(CommandData& c, uint uNumTargets, const uint aTargets[])
 {
 	c.eType = COMMAND_SET_RENDER_TARGET;
 	auto p = reinterpret_cast<RenderTargetData*>(c.aData);
@@ -448,7 +449,7 @@ void makeSetRenderTarget(Command& c, uint uNumTargets, const uint aTargets[])
 	memcpy(p->aTargets, aTargets, uNumTargets * sizeof(uint));
 }
 
-void makeSetViewport(Command& c, uint uWidth, uint uHeight, float fNear, float fFar)
+void makeSetViewport(CommandData& c, uint uWidth, uint uHeight, float fNear, float fFar)
 {
 	c.eType = COMMAND_SET_VIEWPORT;
 	auto p = reinterpret_cast<ViewportData*>(c.aData);
@@ -458,7 +459,7 @@ void makeSetViewport(Command& c, uint uWidth, uint uHeight, float fNear, float f
 	p->fFar = fFar;
 }
 
-void makeDrawCall(Command& c, uint u1, uint u2, const Mat4& m)
+void makeDrawCall(CommandData& c, uint u1, uint u2, const Mat4& m)
 {
 	c.eType = COMMAND_DRAW_CALL;
 	auto p = reinterpret_cast<DrawCallData*>(c.aData);
@@ -467,22 +468,9 @@ void makeDrawCall(Command& c, uint u1, uint u2, const Mat4& m)
 	p->mWorldFromModel = m;
 }
 
-/*
-struct CommandBuffer
-{
-	CommandBuffer() {}
-	~CommandBuffer() {}
-
-	Command* aData;
-	Command* pCmd;    // Pointer to the next available command
-	uint uCount;
-	thread::id owner; // Only the owner thread is allowed to modify this buffer during the update/render phase
-};
-*/
-
 static const int COUNT = 50000;
-Command* aUpdateBuffer; // Should be protected under thread_id
-Command* aRenderBuffer; // Should be protected under thread_id
+CommandData* aUpdateBuffer; // Should be protected under thread_id
+CommandData* aRenderBuffer; // Should be protected under thread_id
 int iCommandCount = 0;
 uint uResultTotal = 0;
 uint uUpdateModifier = 0;
@@ -508,7 +496,7 @@ void runUpdate()
 	// Populate "update" buffer 
 	Timer t("PopulateTime");
 	t.start();
-	Command* pCurrentUpdate = aUpdateBuffer;
+	CommandData* pCurrentUpdate = aUpdateBuffer;
 	int iRand = 0;
 	for (int i = 0; i < COUNT; ++i)
 	{
@@ -714,8 +702,8 @@ void testCommands()
 {
 	Timer ta("MallocTime");
 	ta.start();
-	aUpdateBuffer = new Command[COUNT];
-	aRenderBuffer = new Command[COUNT];
+	aUpdateBuffer = new CommandData[COUNT];
+	aRenderBuffer = new CommandData[COUNT];
 	ta.stop();
 	cout << "Malloc time:\t" << ta.getTime() << "ms\n\n";
 
@@ -807,9 +795,12 @@ public:
 private:
 	uint uStart;
 	uint uEnd;
-	Command *pCurrent;
-	Command* aCommands;
+	CommandData* pCurrent;
+	vector<CommandData>* aCommandDataBuffer;
 
+	// Command proxies store offsets (into command data buffer) of actual commands.
+	// Proxies can be sorted efficiently and is used to determine order of command execution.
+	vector<CommandProxy>* aCommandProxyList; 
 };
 
 class Material
@@ -923,12 +914,24 @@ private:
 };
 
 // Application namespace
-class Cube
+class Obj
 {
 public:
-	Cube() 
+	Obj() {}
+	virtual ~Obj() {}
+
+	virtual void update(float dt) {}
+
+private:
+
+};
+
+class Cube : public Obj
+{
+public:
+	Cube(const shared_ptr<VisualModel>& spVisualModel) 
 	{
-		m_upModel = make_unique<VisualModel>();
+		m_spModel = spVisualModel;
 		m_fRadsPerSecond = rand() / float(RAND_MAX);
 	}
 
@@ -936,21 +939,36 @@ public:
 
 	void update(float dt)
 	{
-		m_upModel->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
+		// Update internal state
+
+		// Update visual state
+		m_spModel->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
 	}
 
 private:
-	unique_ptr<VisualModel> m_upModel;
+	shared_ptr<VisualModel> m_spModel;
 	float m_fRadsPerSecond;
 };
 
-shared_ptr<Camera> spFpsCam;
-unique_ptr<View> upFpsView;
-unique_ptr<Cube> upCube;
+shared_ptr<Camera> spMainCam;
+unique_ptr<View> upMainView;
+shared_ptr<VisualModel> spVisualModel;
+
+vector<shared_ptr<Obj>> aObjects;
+vector<shared_ptr<VisualModel>> aVisualModels;
 
 void update(float dt)
 {
-	upCube->update(dt);
+	for (auto& o : aObjects)
+		o->update(dt);
+
+	// upCommandListHUD->generateCommands(upMainView, spHUDCamn, aHUDModels);
+	// upCommandListMain->generateCommands(upMainView, spMainCam, aVisualModels);
+
+	// Combine all command lists into one final command list e.g. aUpdateBuffer
+	// addCommandList(aUpdateBuffer, upCommandListHUD);
+	// addCommandList(aUpdateBuffer, upCommandListMain);
+	// 
 }
 
 int main(int argc, char** argv) {
@@ -960,9 +978,15 @@ int main(int argc, char** argv) {
 	GLWindow window("OpenGL Window", 800, 600);
 
 	loadAssets();
-	spFpsCam = make_shared<Camera>();
-	upFpsView = make_unique<View>(spFpsCam);
-	upCube = make_unique<Cube>();
+	spMainCam = make_shared<Camera>();
+	upMainView = make_unique<View>(spMainCam);
+	
+	auto spVisualModel = make_shared<VisualModel>();
+	auto spCube = make_shared<Cube>(spVisualModel);
+
+	aObjects.push_back(spCube);
+	aVisualModels.push_back(spVisualModel);
+
 
 
 	double dt = 0.0;
@@ -986,7 +1010,7 @@ int main(int argc, char** argv) {
 	}
 
 	cleanupAssets();
-
+	
 	return 0;
 }
 
