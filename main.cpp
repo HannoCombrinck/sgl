@@ -9,6 +9,8 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #include "timer.h"
 
@@ -115,6 +117,11 @@ public:
 	~Target() {}
 
 private:
+	uint m_uTarget;
+	uint m_uCount;
+	uint m_uWidth;
+	uint m_uHeight;
+	uint m_uBPP;
 };
 
 class Camera
@@ -164,9 +171,7 @@ public:
 	}
 
 private:
-	uint m_uTarget;
-	uint m_uWidth;
-	uint m_uHeight;
+	Target m_Target;
 	ELayer m_eLayer;
 	shared_ptr<Camera> m_spCamera;
 };
@@ -714,8 +719,7 @@ void testCommands()
 	ta.stop();
 	cout << "Malloc time:\t" << ta.getTime() << "ms\n\n";
 
-	int iIterations = 1;
-
+	int iIterations = 60;
 
 	Timer tTotal("TotalTime");
 	tTotal.start();
@@ -760,7 +764,7 @@ void testCommands()
 
 	tTotal.start(); // Skip the time it takes to spin up the thread (it's only going to happen once)
 	startUpdateThread(); // Do the first update
-	for (int testCount = 0; testCount < iIterations -1; ++testCount)
+	for (int testCount = 0; testCount < iIterations-1; ++testCount)
 	{
 		syncUpdateThread();
 		swapCommandBuffers(); // Neither update or render code should be running here
@@ -787,6 +791,168 @@ void testCommands()
 	cout << "Dealloc time: " << td.getTime() << "ms\n";
 }
 
+
+// Graphics namespace
+class CommandList
+{
+public:
+	CommandList(uint uMaxCommands) 
+	{
+		
+	}
+
+	~CommandList() {}
+
+
+private:
+	uint uStart;
+	uint uEnd;
+	Command *pCurrent;
+	Command* aCommands;
+
+};
+
+class Material
+{
+public:
+	Material() {}
+	~Material() {}
+
+private:
+	
+};
+
+class Geometry
+{
+public:
+	Geometry() 
+	{
+		vector<SVertex> aVertices = {
+			{ Vec3(0.0f, 0.0f, 0.0f), Vec2(0.0, 0.0) }, // Vertex 0
+			{ Vec3(0.5f, 0.0f, 0.0f), Vec2(1.0, 0.0) }, // Vertex 1
+			{ Vec3(0.5f, 0.5f, 0.0f), Vec2(1.0, 1.0) }, // Vertex 2
+			{ Vec3(0.0f, 0.5f, 0.0f), Vec2(0.0, 1.0) }  // Vertex 3
+		};
+
+		vector<uint> aIndices = {
+			0, 1, 2, // Triangle 0
+			0, 2, 3  // Triangle 1
+		};
+
+		// Create vertex array object
+		glGenVertexArrays(1, &m_uVAO);
+		glBindVertexArray(m_uVAO);
+
+		// Create vertex buffer object
+		glGenBuffers(1, &m_uVBO);
+		glBindBuffer(GL_ARRAY_BUFFER, m_uVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(SVertex) * aVertices.size(), reinterpret_cast<void*>(&aVertices[0]), GL_STATIC_DRAW);
+
+		// Set vertex attribute layouts
+		glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(SVertex), (GLvoid*)0); // Position attribute
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, true, sizeof(SVertex), (GLvoid*)3); // Texture coordinate attribute
+		glEnableVertexAttribArray(1);
+
+		// Create index buffer object
+		glGenBuffers(1, &m_uIB);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_uIB);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(uint) * aIndices.size(), reinterpret_cast<void*>(&aIndices[0]), GL_STATIC_DRAW);
+
+		glBindVertexArray(0);
+
+		// Set primitive type
+		m_uPrimitiveType = GL_TRIANGLES;
+	}
+
+	~Geometry() 
+	{
+		// TODO: Delete buffers
+	}
+
+	uint getVAO() const { return m_uVAO; }
+	uint getPrimitiveType() const { return m_uPrimitiveType; }
+
+private:
+	uint m_uVAO;
+	uint m_uVBO;
+	uint m_uIB;
+	uint m_uPrimitiveType;
+};
+
+class VisualModel
+{
+public:
+	VisualModel() 
+	{
+		m_upGeometry = make_unique<Geometry>();
+	}
+
+	VisualModel(const Vec3& vPosition)
+	{
+		m_upGeometry = make_unique<Geometry>();
+		translate(vPosition);
+	}
+
+	~VisualModel() {}
+
+	void translate(const Vec3& vTranslate)
+	{
+		m_mWorld = glm::translate(m_mWorld, vTranslate);
+	}
+
+	void rotateAxisAngle(const Vec3& vAxis, float fAngle)
+	{
+		m_mWorld = glm::rotate(m_mWorld, fAngle, vAxis);
+	}
+
+	const Geometry& getGeometry() const
+	{
+		return *m_upGeometry;
+	}
+
+	const Mat4& getWorldMatrix() const
+	{
+		return m_mWorld;
+	}
+
+private:
+	unique_ptr<Geometry> m_upGeometry;
+	Mat4 m_mWorld;
+
+};
+
+// Application namespace
+class Cube
+{
+public:
+	Cube() 
+	{
+		m_upModel = make_unique<VisualModel>();
+		m_fRadsPerSecond = rand() / float(RAND_MAX);
+	}
+
+	~Cube() {}
+
+	void update(float dt)
+	{
+		m_upModel->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
+	}
+
+private:
+	unique_ptr<VisualModel> m_upModel;
+	float m_fRadsPerSecond;
+};
+
+shared_ptr<Camera> spFpsCam;
+unique_ptr<View> upFpsView;
+unique_ptr<Cube> upCube;
+
+void update(float dt)
+{
+	upCube->update(dt);
+}
+
 int main(int argc, char** argv) {
 
 	testCommands();
@@ -794,9 +960,10 @@ int main(int argc, char** argv) {
 	GLWindow window("OpenGL Window", 800, 600);
 
 	loadAssets();
+	spFpsCam = make_shared<Camera>();
+	upFpsView = make_unique<View>(spFpsCam);
+	upCube = make_unique<Cube>();
 
-	auto spFpsCam = make_shared<Camera>();
-	View fpsView(spFpsCam);
 
 	double dt = 0.0;
 	while (window.isRunning()) {
