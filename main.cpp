@@ -761,10 +761,10 @@ void testCommands()
 	}
 	syncUpdateThread(); // Finish last update
 	terminateUpdateThread(); // Terminate update thread
-	tTotal.stop();
-	updateThread.join();
 	swapCommandBuffers();
 	runWork(); // Submit work for last frame
+	tTotal.stop();
+	updateThread.join();
 	
 
 	cout << "Result: " << uResultTotal << endl;
@@ -781,31 +781,6 @@ void testCommands()
 
 
 // Graphics namespace
-class CommandList
-{
-public:
-	CommandList(uint uMaxCommands) {}
-	~CommandList() {}
-
-	void generateCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
-	{
-		// TODO
-	}
-
-	vector<CommandData>* getCommandDataBuffer() { return aCommandDataBuffer; }
-	vector<CommandIndex>* getCommandIndexList() { return aCommandIndexList; }
-
-private:
-	uint uStart;
-	uint uEnd;
-	CommandData* pCurrent;
-	vector<CommandData>* aCommandDataBuffer;
-
-	// Command indices store offsets/indices (into command data buffer) of actual commands.
-	// Indices can be sorted efficiently and is used to determine order of command execution.
-	vector<CommandIndex>* aCommandIndexList; 
-};
-
 class Material
 {
 public:
@@ -914,6 +889,36 @@ private:
 	unique_ptr<Geometry> m_upGeometry;
 	Mat4 m_mWorld;
 
+};
+
+class CommandList
+{
+public:
+	CommandList(uint uMaxCommands) {}
+	~CommandList() {}
+
+	void generateCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
+	{
+		// Create SetRenderTarget command from view
+		// Create SetViewport command from view
+		// Create Clear command 
+		// Create DrawCall command by iterating through models
+
+		// TODO
+	}
+
+	vector<CommandData>* getCommandDataBuffer() { return aCommandDataBuffer; }
+	vector<CommandIndex>* getCommandIndexList() { return aCommandIndexList; }
+
+private:
+	uint uStart;
+	uint uEnd;
+	CommandData* pCurrent;
+	vector<CommandData>* aCommandDataBuffer;
+
+	// Command indices store offsets/indices (into command data buffer) of actual commands.
+	// Indices can be sorted efficiently and is used to determine order of command execution.
+	vector<CommandIndex>* aCommandIndexList;
 };
 
 // Application namespace
