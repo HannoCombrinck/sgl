@@ -231,10 +231,10 @@ struct CommandData
 	uchar aData[256]; // Number of bytes required to represent draw command state - calculate based on DrawCallData size
 };
 
-typedef uint64_t OrderKey;
-typedef pair<OrderKey, uint> CommandProxy; // <Key for sorting command execution order, Offset into command buffer>
+typedef uint64_t SortingKey;
+typedef pair<SortingKey, uint> CommandIndex; // <Sorting key for command execution order, Offset/Index into command buffer>
 
-bool commandCompare(const CommandProxy& c1, const CommandProxy& c2) {
+bool commandCompare(const CommandIndex& c1, const CommandIndex& c2) {
 	return c1.first < c2.first;
 }
 
@@ -784,13 +784,16 @@ void testCommands()
 class CommandList
 {
 public:
-	CommandList(uint uMaxCommands) 
-	{
-		
-	}
-
+	CommandList(uint uMaxCommands) {}
 	~CommandList() {}
 
+	void generateCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
+	{
+		// TODO
+	}
+
+	vector<CommandData>* getCommandDataBuffer() { return aCommandDataBuffer; }
+	vector<CommandIndex>* getCommandIndexList() { return aCommandIndexList; }
 
 private:
 	uint uStart;
@@ -798,9 +801,9 @@ private:
 	CommandData* pCurrent;
 	vector<CommandData>* aCommandDataBuffer;
 
-	// Command proxies store offsets (into command data buffer) of actual commands.
-	// Proxies can be sorted efficiently and is used to determine order of command execution.
-	vector<CommandProxy>* aCommandProxyList; 
+	// Command indices store offsets/indices (into command data buffer) of actual commands.
+	// Indices can be sorted efficiently and is used to determine order of command execution.
+	vector<CommandIndex>* aCommandIndexList; 
 };
 
 class Material
@@ -969,6 +972,51 @@ void update(float dt)
 	// addCommandList(aUpdateBuffer, upCommandListHUD);
 	// addCommandList(aUpdateBuffer, upCommandListMain);
 	// 
+}
+
+void render()
+{
+		
+	auto pCmd = aRenderBuffer;
+	for (int i = 0; i < iCommandCount; ++i)
+	{
+		switch (pCmd->eType)
+		{
+		case COMMAND_SET_RENDER_TARGET:
+		{
+			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(pCmd->aData);
+
+			/*glBindFramebuffer(GL_FRAMEBUFFER, m_uID);
+			m_uCurrentlyBound = m_uID;
+			if (m_iNumTargets > 0)
+			glDrawBuffers(m_iNumTargets, aColourAttachmentBuffers);*/
+
+			break;
+		}
+		case COMMAND_SET_VIEWPORT:
+		{
+			auto pViewportData = reinterpret_cast<ViewportData*>(pCmd->aData);
+			break;
+		}
+		case COMMAND_CLEAR:
+		{
+			auto pClearData = reinterpret_cast<ClearData*>(pCmd->aData);
+			break;
+		}
+		case COMMAND_DRAW_CALL:
+		{
+			auto pDrawCallData = reinterpret_cast<DrawCallData*>(pCmd->aData);
+			break;
+		}
+		default:
+			cout << "Invalid command type\n";
+			assert(false);
+			break;
+		}
+
+		pCmd++;
+	}
+
 }
 
 int main(int argc, char** argv) {
