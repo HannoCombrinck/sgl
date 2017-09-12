@@ -40,6 +40,7 @@ static NullPtr null_ptr;
 // GPU jobs
 /*
 Create VBO, IBO, VAO, shader, texture, framebufferobject etc..
+Modifying a VBO containing instancing data
 */
 
 // Render thread sequence
@@ -176,16 +177,52 @@ private:
 	shared_ptr<Camera> m_spCamera;
 };
 
-/*class PipelineState
+class PipelineState
 {
 public:
-PipelineState() {}
-~PipelineState() {}
+	PipelineState() {}
+	~PipelineState() {}
+	
+	void setTarget(uint uTarget) 
+	{
+		if (uTarget == m_uTarget)
+			return;
+
+		m_uTarget = uTarget;
+		// gl->setRenderTarget()
+	}
+
+	void setCamera(uint uCamera) 
+	{
+		if (uCamera == m_uCamera)
+			return;
+
+	}
 
 private:
-uint m_uTarget;
-uint m_uMaterial;
-};*/
+	uint m_uTarget; // Render target 
+	uint m_uMaterial; // Shader and all its uniforms 
+	uint m_uCamera; // Camera
+
+	Mat4 m_mProjFromView;
+	Mat4 m_mViewFromWorld;
+};
+
+class Device
+{
+public:
+	Device() {}
+	~Device() {}
+
+	//
+
+	const PipelineState& getState() const { return m_State; }
+	PipelineState& modifyState() { return m_State; }
+
+private:
+	PipelineState m_State;
+
+};
 
 enum ECommandType
 {
@@ -217,10 +254,12 @@ struct ClearData
 
 struct DrawCallData
 {
-	// Temp example data:
-	uint uHandle1;
-	uint uHandle2;
-	Mat4 mWorldFromModel;
+	// ALL the data required to setup and call gl->draw* 
+	// That includes all uniforms that have to be uploaded to the material
+	uint uMaterial; // Material handle
+	Mat4 mWorldFromModel; // World matrix for this draw call
+	uchar aData[128]; // e.g. diffuse colour to be uploaded to material specific uniform
+	uint uVAO; // Geometry (vbo, ib, etc..)
 };
 
 struct CommandData
@@ -463,8 +502,8 @@ void makeDrawCall(CommandData& c, uint u1, uint u2, const Mat4& m)
 {
 	c.eType = COMMAND_DRAW_CALL;
 	auto p = reinterpret_cast<DrawCallData*>(c.aData);
-	p->uHandle1 = u1;
-	p->uHandle2 = u2;
+	p->uMaterial = u1;
+	p->uVAO = u2;
 	p->mWorldFromModel = m;
 }
 
@@ -658,8 +697,8 @@ void runWork()
 		{
 			auto pDrawCallData = reinterpret_cast<DrawCallData*>(pCurrentRender->aData);
 			//cout << i << ") Draw Call\n";
-			uWorkResult += pDrawCallData->uHandle1;
-			uWorkResult += pDrawCallData->uHandle2;
+			uWorkResult += pDrawCallData->uMaterial;
+			uWorkResult += pDrawCallData->uVAO;
 			uWorkResult += uint(pDrawCallData->mWorldFromModel[0][2]);
 			break;
 		}
@@ -788,7 +827,46 @@ public:
 	~Material() {}
 
 private:
+	virtual void uploadAll() = 0;
+	virtual void uploadDeltas(uchar* materialData) = 0;
 	
+};
+
+class BasicDiffuse : public Material
+{
+public:
+	BasicDiffuse() 
+	{
+		// load specific shader .glsl files (hard-coded since this class wraps those)
+	}
+
+	~BasicDiffuse() {}
+
+	void setDiffuse(const Vec3& v) { m_pData.vDiffuseColour = v; }
+
+private:
+
+	// All this private stuff belongs in Shader class and Material is the application interface
+	struct Data
+	{
+		Vec3 vDiffuseColour;
+	};
+
+	// Friend the render back-end so it can call this
+	virtual void invalidateAll()
+	{
+		//setUniform(m_uDiffuseTarget)
+	}
+
+	virtual void uploadDeltas(uchar* materialData)
+	{
+		auto pData = reinterpret_cast<Data*>(materialData);
+
+		//m_spShader->setUniform(
+	}
+
+	// Shader m_spShader;
+	Data m_pData;
 };
 
 class Geometry
@@ -940,6 +1018,9 @@ public:
 	Cube(const shared_ptr<VisualModel>& spVisualModel) 
 	{
 		m_spModel = spVisualModel;
+		//m_spRoot = m_spModel->getRootNode();
+		//m_spWheelLeft = m_spModel->findNode("wheel_left"); // Grab nodes of interest for this object
+
 		m_fRadsPerSecond = rand() / float(RAND_MAX);
 	}
 
@@ -951,6 +1032,7 @@ public:
 
 		// Update visual state
 		m_spModel->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
+		//m_spRoot->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
 	}
 
 private:
@@ -979,9 +1061,30 @@ void update(float dt)
 	// 
 }
 
+void updateThread()
+{
+	/*while (true)
+	{
+		// Wait on update condition variable before going further
+		unique_lock<mutex> bufferLock(bufferMutex);
+		updateCV.wait(bufferLock, [] { return bReadyToUpdate; });
+
+		if (!bIsRunning)
+			return;
+
+		update(dtCurrent);
+
+		bReadyToUpdate = false;
+		bReadyToRender = true;
+		// Unlock mutex and notify thread waiting on update condition variable
+		bufferLock.unlock();
+		updateCV.notify_one();
+	}*/
+}
+
 void render()
 {
-		
+	
 	auto pCmd = aRenderBuffer;
 	for (int i = 0; i < iCommandCount; ++i)
 	{
@@ -1031,9 +1134,16 @@ int main(int argc, char** argv) {
 	GLWindow window("OpenGL Window", 800, 600);
 
 	loadAssets();
+
+	//spAssetLoader = make_shared<AssetLoader>("../data");
+	//upVisualSystem = make_unique<VisualSystem>(spAssetLoader);
+	
+
+
 	spMainCam = make_shared<Camera>();
 	upMainView = make_unique<View>(spMainCam);
 	
+	//auto spVisualModel = upVisualSystem->createVisualModel("test_model.fbx");
 	auto spVisualModel = make_shared<VisualModel>();
 	auto spCube = make_shared<Cube>(spVisualModel);
 
