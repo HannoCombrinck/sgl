@@ -820,6 +820,18 @@ void testCommands()
 
 
 // Graphics namespace
+class Shader
+{
+public:
+	Shader() {}
+	~Shader() {}
+
+private:
+	virtual void uploadAll() = 0;
+	virtual void uploadDeltas(uchar* materialData) = 0;
+
+};
+
 class Material
 {
 public:
@@ -827,8 +839,7 @@ public:
 	~Material() {}
 
 private:
-	virtual void uploadAll() = 0;
-	virtual void uploadDeltas(uchar* materialData) = 0;
+	uint m_uShader; // Shader "program" i.e. vertex, geometry, tessellation and pixel shaders 
 	
 };
 
