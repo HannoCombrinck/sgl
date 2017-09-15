@@ -942,11 +942,62 @@ private:
 	uint m_uPrimitiveType;
 };
 
+class CommandList
+{
+public:
+	CommandList(uint uMaxCommands)
+		: m_uCount(0U)
+		, m_uMaxCommands(uMaxCommands)
+	{
+		// Allocate memory for command buffer and list
+
+		m_pData = m_aCommandBuffer->data(); // Set m_pData to point to first element of command buffer
+		m_pIndex = m_aCommandList->data(); // Set m_pIndex to point to first element of command list
+	}
+
+	~CommandList() {}
+
+	/*void addCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
+	{
+	// Create SetRenderTarget command from view
+	// Create SetViewport command from view
+	// Create Clear command
+	// Create DrawCall command by iterating through models
+
+	// TODO
+	}*/
+
+	void clearCommands()
+	{
+		m_uCount = 0U;
+		m_pData = m_aCommandBuffer->data();
+		m_pIndex = m_aCommandList->data();
+	}
+
+	vector<CommandData>* getCommandBuffer() { return m_aCommandBuffer; }
+	vector<CommandIndex>* getCommandList() { return m_aCommandList; }
+
+private:
+	uint m_uCount;
+	uint m_uMaxCommands;
+	CommandData* m_pData;
+	CommandIndex* m_pIndex;
+
+	vector<CommandData>* m_aCommandBuffer;
+
+	// Command indices store offsets/indices (into command data buffer) of actual commands.
+	// Indices can be sorted efficiently and is used to determine order of command execution.
+	vector<CommandIndex>* m_aCommandList;
+};
+
 class VisualModel
 {
 public:
 	VisualModel() 
 	{
+		// Visual model should generate draw call command data
+		//	Get Command object pointers from rendering back-end and modify the data according to 
+		//	state of VisualModel object
 		m_upGeometry = make_unique<Geometry>();
 	}
 
@@ -978,41 +1029,25 @@ public:
 		return m_mWorld;
 	}
 
+	void updateCommandData(CommandList& aCommands)
+	{
+		if (true /*bUpdateCommandData*/)
+		{
+			auto& pCommandData = (*aCommands.getCommandBuffer())[m_Command.second];
+			auto pDrawCall = reinterpret_cast<DrawCallData*>(pCommandData.aData);
+
+		}
+
+		aCommands.getCommandList()->push_back(m_Command);
+	}
+
 private:
 	unique_ptr<Geometry> m_upGeometry;
 	Mat4 m_mWorld;
 
+	CommandIndex m_Command;
 };
 
-class CommandList
-{
-public:
-	CommandList(uint uMaxCommands) {}
-	~CommandList() {}
-
-	void generateCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
-	{
-		// Create SetRenderTarget command from view
-		// Create SetViewport command from view
-		// Create Clear command 
-		// Create DrawCall command by iterating through models
-
-		// TODO
-	}
-
-	vector<CommandData>* getCommandBuffer() { return aCommandBuffer; }
-	vector<CommandIndex>* getCommandList() { return aCommandList; }
-
-private:
-	uint uStart;
-	uint uEnd;
-	CommandData* pCurrent;
-	vector<CommandData>* aCommandBuffer;
-
-	// Command indices store offsets/indices (into command data buffer) of actual commands.
-	// Indices can be sorted efficiently and is used to determine order of command execution.
-	vector<CommandIndex>* aCommandList;
-};
 
 // Application namespace
 class Obj
@@ -1048,7 +1083,7 @@ public:
 		// Update visual state
 		m_spModel->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
 		//m_spRoot->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
-		
+
 		//m_spRoot->setColour(Vec4(1.0f, 0.0f, 0.0f, 1.0f));
 	}
 
