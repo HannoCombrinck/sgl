@@ -19,6 +19,7 @@ using namespace std;
 typedef unsigned int uint;
 typedef unsigned char uchar;
 typedef glm::mat4 Mat4;
+typedef glm::vec4 Vec4;
 typedef glm::vec3 Vec3;
 typedef glm::vec2 Vec2;
 
@@ -823,13 +824,16 @@ void testCommands()
 class Shader
 {
 public:
-	Shader() {}
+	Shader(uint uID) {}
 	~Shader() {}
+
+	uint getHandle() const { return m_uID; }
 
 private:
 	virtual void uploadAll() = 0;
 	virtual void uploadDeltas(uchar* materialData) = 0;
-
+	
+	uint m_uID; // GPU handle to object encapsulating all shader objects (vertex, geometry, tessellation, pixel etc.)
 };
 
 class Material
@@ -839,7 +843,7 @@ public:
 	~Material() {}
 
 private:
-	uint m_uShader; // Shader "program" i.e. vertex, geometry, tessellation and pixel shaders 
+	uint m_uShaderHandle; // Handle to Shader object
 	
 };
 
@@ -996,18 +1000,18 @@ public:
 		// TODO
 	}
 
-	vector<CommandData>* getCommandDataBuffer() { return aCommandDataBuffer; }
-	vector<CommandIndex>* getCommandIndexList() { return aCommandIndexList; }
+	vector<CommandData>* getCommandBuffer() { return aCommandBuffer; }
+	vector<CommandIndex>* getCommandList() { return aCommandList; }
 
 private:
 	uint uStart;
 	uint uEnd;
 	CommandData* pCurrent;
-	vector<CommandData>* aCommandDataBuffer;
+	vector<CommandData>* aCommandBuffer;
 
 	// Command indices store offsets/indices (into command data buffer) of actual commands.
 	// Indices can be sorted efficiently and is used to determine order of command execution.
-	vector<CommandIndex>* aCommandIndexList;
+	vector<CommandIndex>* aCommandList;
 };
 
 // Application namespace
@@ -1044,11 +1048,14 @@ public:
 		// Update visual state
 		m_spModel->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
 		//m_spRoot->rotateAxisAngle(Vec3(1.0f, 0.0f, 0.0), m_fRadsPerSecond * dt);
+		
+		//m_spRoot->setColour(Vec4(1.0f, 0.0f, 0.0f, 1.0f));
 	}
 
 private:
 	shared_ptr<VisualModel> m_spModel;
 	float m_fRadsPerSecond;
+
 };
 
 shared_ptr<Camera> spMainCam;
