@@ -1029,20 +1029,24 @@ public:
 		return m_mWorld;
 	}
 
-	void updateCommandData(CommandList& aCommands)
+	void updateCommandData(CommandList& aCommands, const SortingKey& uSortingKeyBase)
 	{
 		if (true /*bUpdateCommandData*/)
 		{
 			auto& pCommandData = (*aCommands.getCommandBuffer())[m_Command.second];
-			auto pDrawCall = reinterpret_cast<DrawCallData*>(pCommandData.aData);
-
+			makeDrawCall(pCommandData, m_upGeometry->getVAO(), 0 /*material id/handle */, m_mWorld);
+			
 		}
 
+		auto uDepth = 10U; // Convert distance to camera to uint value: (uint)((float_distance / float(2^(num_bits_for_depth)) * float(2^(num_bits_for_depth)))
+		auto m_uMaterialHandleBits = (m_uMaterial << 30); // Calculate this only when material changes
+		m_Command.first = uSortingKeyBase | m_uMaterialHandleBits | uDepth;
 		aCommands.getCommandList()->push_back(m_Command);
 	}
 
 private:
 	unique_ptr<Geometry> m_upGeometry;
+	uint m_uMaterial;
 	Mat4 m_mWorld;
 
 	CommandIndex m_Command;
