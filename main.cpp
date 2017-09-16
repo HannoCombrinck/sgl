@@ -884,11 +884,114 @@ private:
 	Data m_pData;
 };
 
+class CommandQueue
+{
+public:
+	CommandQueue(uint uMaxCommands)
+		: m_uCount(0U)
+		, m_uMaxCommands(uMaxCommands)
+	{
+		// Allocate memory for command buffer and list
+
+		m_pData = m_aCommandBuffer->data(); // Set m_pData to point to first element of command buffer
+		m_pIndex = m_aCommandList->data(); // Set m_pIndex to point to first element of command list
+	}
+
+	~CommandQueue()
+	{
+		delete m_aCommandBuffer;
+		delete m_aCommandList;
+	}
+
+	/*void addCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
+	{
+	// Create SetRenderTarget command from view
+	// Create SetViewport command from view
+	// Create Clear command
+	// Create DrawCall command by iterating through models
+
+	// TODO
+	}*/
+
+	void clearCommands()
+	{
+		m_uCount = 0U;
+		m_pIndex = m_aCommandList->data();
+	}
+
+	void setCommandBuffer(vector<CommandData>* p) { m_aCommandBuffer = p; }
+	vector<CommandData>* getCommandBuffer() { return m_aCommandBuffer; }
+	void setCommandList(vector<CommandIndex>* p) { m_aCommandList = p; }
+	vector<CommandIndex>* getCommandList() { return m_aCommandList; }
+
+private:
+	uint m_uCount;
+	uint m_uMaxCommands;
+	CommandData* m_pData;
+	CommandIndex* m_pIndex;
+
+	vector<CommandData>* m_aCommandBuffer;
+	vector<CommandIndex>* m_aCommandList;
+};
+
+class RenderBufferManager
+{
+public:
+	RenderBufferManager(uint uCommandBufferSize)
+	{
+		// Once of memory allocation for command data buffers and command lists
+		m_aCommandBufferApplication = new vector<CommandData>(uCommandBufferSize);
+		m_aCommandListApplication = new vector<CommandIndex>(uCommandBufferSize);
+		m_aCommandBufferRenderer = new vector<CommandData>(uCommandBufferSize);
+		m_aCommandListRenderer = new vector<CommandIndex>(uCommandBufferSize);
+	}
+
+	~RenderBufferManager() {}
+
+	uint createCommand()
+	{
+		uint uHanlde = m_aCommandBufferApplication->size();
+		m_aCommandBufferApplication->push_back(CommandData());
+		m_aCommandListApplication->push_back(CommandIndex());
+		m_aCommandBufferRenderer->push_back(CommandData());
+		m_aCommandListRenderer->push_back(CommandIndex());
+		return uHanlde;
+	}
+
+	vector<CommandData>* getApplicationCommandBuffer() { return m_aCommandBufferApplication; }
+	vector<CommandIndex>* getApplicationCommandList() { return m_aCommandListApplication; }
+
+	void swapBuffers()
+	{
+		swap(m_aCommandBufferApplication, m_aCommandBufferRenderer);
+		swap(m_aCommandListApplication, m_aCommandListRenderer);
+
+		for (auto spQueue : m_aCommandQueues)
+		{
+			spQueue->setCommandBuffer(m_aCommandBufferApplication);
+			spQueue->setCommandList(m_aCommandListApplication);
+		}
+	}
+
+private:
+	vector<shared_ptr<CommandQueue>> m_aCommandQueues;
+
+	// Buffer and list being update by the application thread(s)
+	vector<CommandData>* m_aCommandBufferApplication;
+	vector<CommandIndex>* m_aCommandListApplication;
+
+	// Buffer and list being read by the render thread submitting commands to the GPU
+	vector<CommandData>* m_aCommandBufferRenderer;
+	vector<CommandIndex>* m_aCommandListRenderer;
+};
+
 class Geometry
 {
 public:
-	Geometry() 
+	Geometry(RenderBufferManager& RBM)
 	{
+		m_uCommandIndex = RBM.createCommand();
+
 		vector<SVertex> aVertices = {
 			{ Vec3(0.0f, 0.0f, 0.0f), Vec2(0.0, 0.0) }, // Vertex 0
 			{ Vec3(0.5f, 0.0f, 0.0f), Vec2(1.0, 0.0) }, // Vertex 1
@@ -940,71 +1043,17 @@ private:
 	uint m_uVBO;
 	uint m_uIB;
 	uint m_uPrimitiveType;
-};
 
-class CommandList
-{
-public:
-	CommandList(uint uMaxCommands)
-		: m_uCount(0U)
-		, m_uMaxCommands(uMaxCommands)
-	{
-		// Allocate memory for command buffer and list
-
-		m_pData = m_aCommandBuffer->data(); // Set m_pData to point to first element of command buffer
-		m_pIndex = m_aCommandList->data(); // Set m_pIndex to point to first element of command list
-	}
-
-	~CommandList() {}
-
-	/*void addCommands(const View& view, const Camera& camera, const vector<VisualModel>& models)
-	{
-	// Create SetRenderTarget command from view
-	// Create SetViewport command from view
-	// Create Clear command
-	// Create DrawCall command by iterating through models
-
-	// TODO
-	}*/
-
-	void clearCommands()
-	{
-		m_uCount = 0U;
-		m_pData = m_aCommandBuffer->data();
-		m_pIndex = m_aCommandList->data();
-	}
-
-	vector<CommandData>* getCommandBuffer() { return m_aCommandBuffer; }
-	vector<CommandIndex>* getCommandList() { return m_aCommandList; }
-
-private:
-	uint m_uCount;
-	uint m_uMaxCommands;
-	CommandData* m_pData;
-	CommandIndex* m_pIndex;
-
-	vector<CommandData>* m_aCommandBuffer;
-
-	// Command indices store offsets/indices (into command data buffer) of actual commands.
-	// Indices can be sorted efficiently and is used to determine order of command execution.
-	vector<CommandIndex>* m_aCommandList;
+	uint m_uCommandIndex;
 };
 
 class VisualModel
 {
 public:
-	VisualModel() 
+	VisualModel(const string& sName, RenderBufferManager& RBM) 
+		: m_sName(sName)
 	{
-		// Visual model should generate draw call command data
-		//	Get Command object pointers from rendering back-end and modify the data according to 
-		//	state of VisualModel object
-		m_upGeometry = make_unique<Geometry>();
-	}
-
-	VisualModel(const Vec3& vPosition)
-	{
-		m_upGeometry = make_unique<Geometry>();
-		translate(vPosition);
+		m_upGeometry = make_unique<Geometry>(RBM);
 	}
 
 	~VisualModel() {}
@@ -1029,7 +1078,7 @@ public:
 		return m_mWorld;
 	}
 
-	void updateCommandData(CommandList& aCommands, const SortingKey& uSortingKeyBase)
+	void updateCommandData(CommandQueue& aCommands, const SortingKey& uSortingKeyBase)
 	{
 		if (true /*bUpdateCommandData*/)
 		{
@@ -1045,6 +1094,7 @@ public:
 	}
 
 private:
+	string m_sName;
 	unique_ptr<Geometry> m_upGeometry;
 	uint m_uMaterial;
 	Mat4 m_mWorld;
@@ -1099,10 +1149,8 @@ private:
 
 shared_ptr<Camera> spMainCam;
 unique_ptr<View> upMainView;
-shared_ptr<VisualModel> spVisualModel;
 
 vector<shared_ptr<Obj>> aObjects;
-vector<shared_ptr<VisualModel>> aVisualModels;
 
 void update(float dt)
 {
@@ -1184,6 +1232,31 @@ void render()
 
 }
 
+class VisualSystem
+{
+public:
+	VisualSystem(const shared_ptr<RenderBufferManager>& spRBM)
+		: m_spRBM(spRBM)
+	{
+	}
+
+	~VisualSystem() {}
+
+	shared_ptr<VisualModel> createModel(const string& sFilename)
+	{
+		auto sp = make_shared<VisualModel>(sFilename, *m_spRBM);
+		m_aModels.push_back(sp);
+		return sp;
+	}
+
+	const vector<shared_ptr<VisualModel>>& getModels() const { return m_aModels; }
+
+private:
+	shared_ptr<RenderBufferManager> m_spRBM;
+	vector<shared_ptr<VisualModel>> m_aModels;
+
+};
+
 int main(int argc, char** argv) {
 
 	testCommands();
@@ -1194,19 +1267,15 @@ int main(int argc, char** argv) {
 
 	//spAssetLoader = make_shared<AssetLoader>("../data");
 	//upVisualSystem = make_unique<VisualSystem>(spAssetLoader);
-	
-
+	auto spRenderBufferManager = make_shared<RenderBufferManager>(COUNT);
+	auto upVisualSystem = make_unique<VisualSystem>(spRenderBufferManager);
 
 	spMainCam = make_shared<Camera>();
 	upMainView = make_unique<View>(spMainCam);
 	
-	//auto spVisualModel = upVisualSystem->createVisualModel("test_model.fbx");
-	auto spVisualModel = make_shared<VisualModel>();
+	auto spVisualModel = upVisualSystem->createModel("test_model.fbx");
 	auto spCube = make_shared<Cube>(spVisualModel);
-
 	aObjects.push_back(spCube);
-	aVisualModels.push_back(spVisualModel);
-
 
 
 	double dt = 0.0;
