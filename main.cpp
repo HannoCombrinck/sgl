@@ -265,10 +265,11 @@ struct DrawCallData
 
 struct CommandData
 {
-	CommandData() : eType(COMMAND_INVALID) {}
+	CommandData() : eType(COMMAND_INVALID), bNeedsRefresh(true) {}
 
 	ECommandType eType;
 	uchar aData[256]; // Number of bytes required to represent draw command state - calculate based on DrawCallData size
+	bool bNeedsRefresh;
 };
 
 typedef uint64_t SortingKey;
@@ -602,59 +603,9 @@ void runUpdateMT()
 	}
 }
 
-
 void swapCommandBuffers()
 {
 	swap(aUpdateBuffer, aRenderBuffer);
-}
-
-void submitCommands()
-{
-	Timer t("SubmitCommands");
-	t.start();
-
-	auto pCmd = aRenderBuffer;
-	for (int i = 0; i < iCommandCount; ++i)
-	{
-		switch (pCmd->eType)
-		{
-		case COMMAND_SET_RENDER_TARGET:
-		{
-			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(pCmd->aData);
-			
-			/*glBindFramebuffer(GL_FRAMEBUFFER, m_uID);
-			m_uCurrentlyBound = m_uID;
-			if (m_iNumTargets > 0)
-				glDrawBuffers(m_iNumTargets, aColourAttachmentBuffers);*/
-
-			break;
-		}
-		case COMMAND_SET_VIEWPORT:
-		{
-			auto pViewportData = reinterpret_cast<ViewportData*>(pCmd->aData);
-			break;
-		}
-		case COMMAND_CLEAR:
-		{
-			auto pClearData = reinterpret_cast<ClearData*>(pCmd->aData);
-			break;
-		}
-		case COMMAND_DRAW_CALL:
-		{
-			auto pDrawCallData = reinterpret_cast<DrawCallData*>(pCmd->aData);
-			break;
-		}
-		default:
-			cout << "Invalid command type\n";
-			assert(false);
-			break;
-		}
-
-		pCmd++;
-	}
-
-	t.stop();
-	//cout << "Submit commands time:\t\t" << t.getTime() << "ms\n";
 }
 
 void runWork()
@@ -892,7 +843,6 @@ public:
 		, m_uMaxCommands(uMaxCommands)
 	{
 		// Allocate memory for command buffer and list
-
 		m_pData = m_aCommandBuffer->data(); // Set m_pData to point to first element of command buffer
 		m_pIndex = m_aCommandList->data(); // Set m_pIndex to point to first element of command list
 	}
@@ -950,16 +900,26 @@ public:
 
 	uint createCommand()
 	{
-		uint uHanlde = m_aCommandBufferApplication->size();
+		uint uHandle = m_aCommandBufferApplication->size();
 		m_aCommandBufferApplication->push_back(CommandData());
 		m_aCommandListApplication->push_back(CommandIndex());
 		m_aCommandBufferRenderer->push_back(CommandData());
 		m_aCommandListRenderer->push_back(CommandIndex());
-		return uHanlde;
+		return uHandle;
+	}
+
+	shared_ptr<CommandQueue> createCommandQueue()
+	{
+		auto sp = make_shared<CommandQueue>();
+		m_aCommandQueues.push_back(sp);
+		return sp;
 	}
 
 	vector<CommandData>* getApplicationCommandBuffer() { return m_aCommandBufferApplication; }
 	vector<CommandIndex>* getApplicationCommandList() { return m_aCommandListApplication; }
+
+	vector<CommandData>* getRendererCommandBuffer() { return m_aCommandBufferRenderer; }
+	vector<CommandIndex>* getRendererCommandList() { return m_aCommandListRenderer; }
 
 	void swapBuffers()
 	{
@@ -1037,6 +997,7 @@ public:
 
 	uint getVAO() const { return m_uVAO; }
 	uint getPrimitiveType() const { return m_uPrimitiveType; }
+	uint getCommandIndex() const { return m_uCommandIndex; }
 
 private:
 	uint m_uVAO;
@@ -1052,6 +1013,7 @@ class VisualModel
 public:
 	VisualModel(const string& sName, RenderBufferManager& RBM) 
 		: m_sName(sName)
+		, m_uMaterial(2U)
 	{
 		m_upGeometry = make_unique<Geometry>(RBM);
 	}
@@ -1073,27 +1035,35 @@ public:
 		return *m_upGeometry;
 	}
 
+	uint getMaterialHandle() const
+	{
+		return m_uMaterial;
+	}
+
 	const Mat4& getWorldMatrix() const
 	{
 		return m_mWorld;
 	}
 
-	void updateCommandData(CommandQueue& aCommands, const SortingKey& uSortingKeyBase)
+private:
+	// This should me called by 
+	void updateCommandData(CommandQueue& commandQueue, const SortingKey& uSortingKeyBase)
 	{
+		auto uIndex = m_upGeometry->getCommandIndex();
 		if (true /*bUpdateCommandData*/)
 		{
-			auto& pCommandData = (*aCommands.getCommandBuffer())[m_Command.second];
+			auto& pCommandData = (*commandQueue.getCommandBuffer())[uIndex];
 			makeDrawCall(pCommandData, m_upGeometry->getVAO(), 0 /*material id/handle */, m_mWorld);
-			
+
 		}
 
-		auto uDepth = 10U; // Convert distance to camera to uint value: (uint)((float_distance / float(2^(num_bits_for_depth)) * float(2^(num_bits_for_depth)))
+		/*auto uDepth = 10U; // Convert distance to camera to uint value: (uint)((float_distance / float(2^(num_bits_for_depth)) * float(2^(num_bits_for_depth)))
 		auto m_uMaterialHandleBits = (m_uMaterial << 30); // Calculate this only when material changes
-		m_Command.first = uSortingKeyBase | m_uMaterialHandleBits | uDepth;
-		aCommands.getCommandList()->push_back(m_Command);
+		cmdIndex.first = uSortingKeyBase | m_uMaterialHandleBits | uDepth;
+		commandQueue.getCommandList()->push_back(m_Command);*/
 	}
 
-private:
+
 	string m_sName;
 	unique_ptr<Geometry> m_upGeometry;
 	uint m_uMaterial;
@@ -1187,38 +1157,74 @@ void updateThread()
 	}*/
 }
 
-void render()
+void submitCommands(RenderBufferManager& RBM, bool bPrintCommands = false)
 {
-	
-	auto pCmd = aRenderBuffer;
-	for (int i = 0; i < iCommandCount; ++i)
+	auto pCommandBuffer = RBM.getRendererCommandBuffer();
+	auto pCommandList = RBM.getRendererCommandList();
+
+	uint uIndex;
+	CommandData* pCmd = 0;
+
+	for (auto& CmdIndex : *pCommandList)
 	{
-		switch (pCmd->eType)
+		uIndex = CmdIndex.second;
+		pCmd = &pCommandBuffer->at(uIndex);
+
+		switch (pCmd[uIndex].eType)
 		{
 		case COMMAND_SET_RENDER_TARGET:
 		{
 			auto pRenderTargetData = reinterpret_cast<RenderTargetData*>(pCmd->aData);
-
 			/*glBindFramebuffer(GL_FRAMEBUFFER, m_uID);
 			m_uCurrentlyBound = m_uID;
 			if (m_iNumTargets > 0)
 			glDrawBuffers(m_iNumTargets, aColourAttachmentBuffers);*/
 
+			if (bPrintCommands)
+			{
+				cout << "Set Render Target\n";
+				cout << "Number of targets: " << pRenderTargetData->aTargets[0] << endl;
+				for (uint i = 0U; i < pRenderTargetData->uNumTargets; ++i)
+					cout << "\t" << pRenderTargetData->aTargets[i] << endl;
+				cout << endl;
+			}
 			break;
 		}
 		case COMMAND_SET_VIEWPORT:
 		{
 			auto pViewportData = reinterpret_cast<ViewportData*>(pCmd->aData);
+			if (bPrintCommands)
+			{
+				cout << "Set Viewport\n";
+				cout << "\tWidth: " << pViewportData->uWidth << endl;
+				cout << "\tHeight: " << pViewportData->uHeight << endl;
+				cout << "\tNear: " << pViewportData->fNear << endl;
+				cout << "\tFar: " << pViewportData->fFar << endl;
+				cout << endl;
+			}
 			break;
 		}
 		case COMMAND_CLEAR:
 		{
 			auto pClearData = reinterpret_cast<ClearData*>(pCmd->aData);
+			if (bPrintCommands)
+			{
+				cout << "Clear\n";
+				cout << "\tFlags: " << pClearData->uFlags << endl;
+				cout << endl;
+			}
 			break;
 		}
 		case COMMAND_DRAW_CALL:
 		{
 			auto pDrawCallData = reinterpret_cast<DrawCallData*>(pCmd->aData);
+			if (bPrintCommands)
+			{
+				cout << "Draw call\n";
+				cout << "\tVAO: " << pDrawCallData->uVAO << endl;
+				cout << "\tMaterial: " << pDrawCallData->uMaterial << endl;
+				cout << endl;
+			}
 			break;
 		}
 		default:
@@ -1226,10 +1232,7 @@ void render()
 			assert(false);
 			break;
 		}
-
-		pCmd++;
 	}
-
 }
 
 class VisualSystem
@@ -1249,6 +1252,23 @@ public:
 		return sp;
 	}
 
+	//??????
+	void updateDrawCallData(CommandQueue& commandQueue, const SortingKey& uSortingKeyBase)
+	{
+		for (auto spVM : m_aModels)
+		{
+			const auto& rGeometry = spVM->getGeometry();
+
+			auto uIndex = rGeometry.getCommandIndex();
+			if (true /*bUpdateCommandData*/)
+			{
+				auto& pCommandData = (*commandQueue.getCommandBuffer())[uIndex];
+				makeDrawCall(pCommandData, rGeometry.getVAO(), spVM->getMaterialHandle(), spVM->getWorldMatrix());
+				// ????????????
+			}
+		}
+	}
+
 	const vector<shared_ptr<VisualModel>>& getModels() const { return m_aModels; }
 
 private:
@@ -1259,7 +1279,7 @@ private:
 
 int main(int argc, char** argv) {
 
-	testCommands();
+	//testCommands();
 
 	GLWindow window("OpenGL Window", 800, 600);
 
@@ -1274,16 +1294,28 @@ int main(int argc, char** argv) {
 	upMainView = make_unique<View>(spMainCam);
 	
 	auto spVisualModel = upVisualSystem->createModel("test_model.fbx");
+	auto spVisualModel2 = upVisualSystem->createModel("test_model2.fbx");
 	auto spCube = make_shared<Cube>(spVisualModel);
 	aObjects.push_back(spCube);
+	auto spCube2 = make_shared<Cube>(spVisualModel2);
+	aObjects.push_back(spCube2);
 
 
-	double dt = 0.0;
+	float dt = 0.0f;
 	while (window.isRunning()) {
 		// Update thread
 		window.processEvents();
-		dt = window.getDeltaTime();
-		//update(dt);
+		dt = float(window.getDeltaTime());
+	
+		update(dt);
+	
+		/////////////
+		// This can be multi-threaded
+
+		//upVisualSystem->updateDrawCallData()
+
+		/////////////
+
 		glMatrixMode(GL_MODELVIEW);
 		glRotatef(1.0f, 0.0f, 0.0f, 1.0f);
 
