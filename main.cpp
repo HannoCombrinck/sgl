@@ -888,6 +888,7 @@ class RenderBufferManager
 {
 public:
 	RenderBufferManager(uint uCommandBufferSize)
+		: m_uBufferSize(uCommandBufferSize)
 	{
 		// Once of memory allocation for command data buffers and command lists
 		m_aCommandBufferApplication = new vector<CommandData>(uCommandBufferSize);
@@ -910,7 +911,7 @@ public:
 
 	shared_ptr<CommandQueue> createCommandQueue()
 	{
-		auto sp = make_shared<CommandQueue>();
+		auto sp = make_shared<CommandQueue>(m_uBufferSize);
 		m_aCommandQueues.push_back(sp);
 		return sp;
 	}
@@ -943,6 +944,8 @@ private:
 	// Buffer and list being read by the render thread submitting commands to the GPU
 	vector<CommandData>* m_aCommandBufferRenderer;
 	vector<CommandIndex>* m_aCommandListRenderer;
+
+	uint m_uBufferSize;
 };
 
 class Geometry
