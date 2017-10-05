@@ -520,8 +520,8 @@ thread::id updateThreadID;
 
 mutex bufferMutex;
 condition_variable updateCV;
-bool bReadyToUpdate = false; // Additional variable to check for "spurious wakeup" from update thread's side
-bool bReadyToRender = false; // Additional variable to check for "spurious wakeup" from main thread's side
+bool bReadyToUpdate = false;
+bool bReadyToRender = false;
 // bReadyToUpdate and bReadyToRender is protected under bufferMutex
 bool bIsRunning = true;
 
